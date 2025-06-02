@@ -583,47 +583,108 @@ class ImageCropPicker implements ActivityEventListener {
         return path;
     }
 
+//    private File createExternalStoragePrivateFile(Context context, Uri uri) throws FileNotFoundException {
+//        InputStream inputStream = context.getContentResolver().openInputStream(uri);
+//
+//        String extension = this.getExtension(context, uri);
+//        File file = new File(context.getExternalCacheDir(), "/temp/" + System.currentTimeMillis() + "." + extension);
+//        File parentFile = file.getParentFile();
+//        if (parentFile != null) {
+//            parentFile.mkdirs();
+//        }
+//
+//        try {
+//            // Very simple code to copy a picture from the application's
+//            // resource into the external file.  Note that this code does
+//            // no error checking, and assumes the picture is small (does not
+//            // try to copy it in chunks).  Note that if external storage is
+//            // not currently mounted this will silently fail.
+//            OutputStream outputStream = new FileOutputStream(file);
+//            byte[] data = new byte[inputStream.available()];
+//            inputStream.read(data);
+//            outputStream.write(data);
+//            inputStream.close();
+//            outputStream.close();
+//        } catch (IOException e) {
+//            // Unable to create file, likely because external storage is
+//            // not currently mounted.
+//            Log.w("image-crop-picker", "Error writing " + file, e);
+//        }
+//
+//        return file;
+//    }
+
     private File createExternalStoragePrivateFile(Context context, Uri uri) throws FileNotFoundException {
         InputStream inputStream = null;
         OutputStream outputStream = null;
-
-        String extension = this.getExtension(context, uri);
-        File file = new File(context.getExternalCacheDir(), "/temp/" + System.currentTimeMillis() + "." + extension);
-        File parentFile = file.getParentFile();
-        if (parentFile != null && !parentFile.exists()) {
-            parentFile.mkdirs();
-        }
+        File file = null;
 
         try {
+            // 1. Open InputStream from the provided Uri
             inputStream = context.getContentResolver().openInputStream(uri);
-            outputStream = new FileOutputStream(file);
+            if (inputStream == null) {
+                // Log a warning and throw if the input stream is null
+                Log.w("image-crop-picker", "Input stream is null for URI: " + uri);
+                throw new FileNotFoundException("Input stream is null for URI: " + uri);
+            }
 
-            byte[] buffer = new byte[1024];  // 1KB buffer
+            // 2. Determine the file extension
+            String extension = getExtension(context, uri);
+            if (extension == null || extension.isEmpty()) {
+                extension = "tmp"; // Fallback to a generic extension if none can be determined
+                Log.w("image-crop-picker", "Could not determine file extension for URI: " + uri + ". Using '.tmp'");
+            }
+
+            // 3. Create the destination file path in the app's external cache directory
+            // This directory is private to your app and doesn't require WRITE_EXTERNAL_STORAGE permission.
+            File tempDir = new File(context.getExternalCacheDir(), "temp");
+            if (!tempDir.exists()) {
+                // Create the 'temp' directory and any necessary parent directories
+                tempDir.mkdirs();
+            }
+
+            // Create the new file with a unique name
+            file = new File(tempDir, System.currentTimeMillis() + "." + extension);
+
+            // 4. Copy data from InputStream to OutputStream in chunks
+            outputStream = new FileOutputStream(file);
+            byte[] buffer = new byte[4 * 1024]; // Use a 4KB buffer for efficient copying
             int bytesRead;
 
+            // Read from the input stream into the buffer and write to the output stream
+            // until the end of the input stream is reached (-1 indicates end of stream)
             while ((bytesRead = inputStream.read(buffer)) != -1) {
                 outputStream.write(buffer, 0, bytesRead);
             }
 
-        } catch (OutOfMemoryError oom) {
-            Log.e("image-crop-picker", "OutOfMemoryError while copying image file", oom);
-            throw new RuntimeException("Image too large to process. Please choose a smaller image.");
-        } catch (IOException e) {
-            Log.w("image-crop-picker", "Error writing " + file, e);
-            throw new RuntimeException("Failed to write the image file to external storage.");
-        } finally {
-            try {
-                if (inputStream != null) inputStream.close();
-            } catch (IOException ignored) {}
+            Log.d("image-crop-picker", "Successfully copied file to: " + file.getAbsolutePath());
 
+        } catch (IOException e) {
+            // Log the error if file creation or copying fails
+            Log.e("image-crop-picker", "Error writing file to " + (file != null ? file.getAbsolutePath() : "null"), e);
+            // Re-throw as FileNotFoundException to indicate failure to the caller
+            throw new FileNotFoundException("Failed to copy file: " + e.getMessage());
+        } finally {
+            // Ensure streams are closed to release system resources, even if an exception occurred
+            // Each close operation is wrapped in its own try-catch to prevent one error from affecting the other
             try {
-                if (outputStream != null) outputStream.close();
-            } catch (IOException ignored) {}
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (IOException e) {
+                Log.e("image-crop-picker", "Error closing input stream", e);
+            }
+            try {
+                if (outputStream != null) {
+                    outputStream.close();
+                }
+            } catch (IOException e) {
+                Log.e("image-crop-picker", "Error closing output stream", e);
+            }
         }
 
         return file;
     }
-
     public String getExtension(Context context, Uri uri) {
         String extension;
 
