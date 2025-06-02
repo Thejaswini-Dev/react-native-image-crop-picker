@@ -648,7 +648,7 @@ class ImageCropPicker implements ActivityEventListener {
 
             // 4. Copy data from InputStream to OutputStream in chunks
             outputStream = new FileOutputStream(file);
-            byte[] buffer = new byte[4 * 1024]; // Use a 4KB buffer for efficient copying
+            byte[] buffer = new byte[256 * 1024]; // Use a 4KB buffer for efficient copying
             int bytesRead;
 
             // Read from the input stream into the buffer and write to the output stream
